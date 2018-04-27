@@ -3,6 +3,10 @@ mini-printf
 
 Minimal printf() implementation for embedded projects.
 
+NEW:
+Adapted for Arduino SAM board (Atmel Sam3x Cortex M3)
+Do not used any buffers.
+
 Motivation
 ----------
 
@@ -32,12 +36,6 @@ Why snprintf() and not printf()? Simply because there are so many
 different ways to print from an embedded system that I can't really
 make an universal-enough printf().
 
-The way I chose makes printing really easy - use mini\_snprintf()
-to print into a "char buffer[]" and then output that buffer to your
-chip's USART, USB or network or whatever other channel you fancy.
-
-As a by-product there's also a mini\_vsnprintf() function available.
-
 Compatibility
 -------------
 
@@ -49,6 +47,8 @@ For now only these are supported:
     %s       - string
     %d, %u   - decimal integer
     %x, %X   - hex integer
+NEW:    
+    %.xf     - float, x - decimal
 
 The integer formatting also supports 0-padding up to 9 characters wide.
 (no space-padding or left-aligned padding yet).
@@ -65,21 +65,6 @@ Usage
 2. Add mini-printf.o to your objects list.
 3. Use snprintf() as usual in your project.
 4. Compile, Flash, Test
-
-Etc.
-----
-
-Written by:
-	Michal Ludvig <michal@logix.cz>
-
-Project homepage:
-	http://logix.cz/michal/devel/mini-printf
-
-Source download:
-	https://github.com/mludvig/mini-printf
-
-Donations:
-	http://logix.cz/michal/devel/donations
 
 License
 -------
