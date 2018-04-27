@@ -4,6 +4,8 @@
  * Copyright (c) 2013,2014 Michal Ludvig <michal@logix.cz>
  * All rights reserved.
  *
+ * Modified by vad7@yahoo.com - minimum stack usage, added float to string: %.xf, x - precision
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright
@@ -43,43 +45,47 @@
 
 #include "mini-printf.h"
 
-static unsigned int
-mini_strlen(const char *s)
+unsigned int m_strlen(const char *s)
 {
 	unsigned int len = 0;
 	while (s[len] != '\0') len++;
 	return len;
 }
 
-static unsigned int
-mini_itoa(int value, unsigned int radix, unsigned int uppercase, unsigned int unsig,
-	 char *buffer, unsigned int zero_pad)
+struct mini_buff {
+	char *buffer, *pbuffer;
+	unsigned int buffer_len;
+};
+
+#define f_uppercase 0x10
+#define f_unsigned  0x20
+#define m_zero_pad	0x0F
+
+// flags: f_uppercase + f_unsigned + (zero_pad & m_zero_pad)
+unsigned int m_itoa(long value, char *buffer, unsigned char radix, unsigned char flags)
 {
 	char	*pbuffer = buffer;
-	int	negative = 0;
+	unsigned char	negative = 0;
 	unsigned int	i, len;
 
 	/* No support for unusual radixes. */
-	if (radix > 16)
-		return 0;
+	if (radix > 36 || radix <= 1) return 0;
 
-	if (value < 0 && !unsig) {
+	if (value < 0 && !(flags & f_unsigned)) {
 		negative = 1;
 		value = -value;
 	}
 
 	/* This builds the string back to front ... */
 	do {
-		int digit = value % radix;
-		*(pbuffer++) = (digit < 10 ? '0' + digit : (uppercase ? 'A' : 'a') + digit - 10);
+		unsigned char digit = value % radix;
+		*(pbuffer++) = (digit < 10 ? '0' + digit : ((flags & f_uppercase) ? 'A' : 'a') + digit - 10);
 		value /= radix;
 	} while (value > 0);
 
-	for (i = (pbuffer - buffer); i < zero_pad; i++)
-		*(pbuffer++) = '0';
+	for (i = (pbuffer - buffer); i < (flags & m_zero_pad); i++)	*(pbuffer++) = '0';
 
-	if (negative)
-		*(pbuffer++) = '-';
+	if (negative) *(pbuffer++) = '-';
 
 	*(pbuffer) = '\0';
 
@@ -95,13 +101,7 @@ mini_itoa(int value, unsigned int radix, unsigned int uppercase, unsigned int un
 	return len;
 }
 
-struct mini_buff {
-	char *buffer, *pbuffer;
-	unsigned int buffer_len;
-};
-
-static int
-_putc(int ch, struct mini_buff *b)
+static int _putc(int ch, struct mini_buff *b)
 {
 	if ((unsigned int)((b->pbuffer - b->buffer) + 1) >= b->buffer_len)
 		return 0;
@@ -110,8 +110,7 @@ _putc(int ch, struct mini_buff *b)
 	return 1;
 }
 
-static int
-_puts(char *s, unsigned int len, struct mini_buff *b)
+static int _puts(char *s, unsigned int len, struct mini_buff *b)
 {
 	unsigned int i;
 
@@ -126,11 +125,10 @@ _puts(char *s, unsigned int len, struct mini_buff *b)
 	return len;
 }
 
-int
-mini_vsnprintf(char *buffer, unsigned int buffer_len, const char *fmt, va_list va)
+unsigned int m_vsnprintf(char *buffer, unsigned int buffer_len, const char *fmt, va_list va)
 {
 	struct mini_buff b;
-	char bf[24];
+//	char bf[24];
 	char ch;
 
 	b.buffer = buffer;
@@ -145,7 +143,7 @@ mini_vsnprintf(char *buffer, unsigned int buffer_len, const char *fmt, va_list v
 		else {
 			char zero_pad = 0;
 			char *ptr;
-			unsigned int len;
+//			unsigned int len;
 
 			ch=*(fmt++);
 
@@ -165,14 +163,18 @@ mini_vsnprintf(char *buffer, unsigned int buffer_len, const char *fmt, va_list v
 
 				case 'u':
 				case 'd':
-					len = mini_itoa(va_arg(va, unsigned int), 10, 0, (ch=='u'), bf, zero_pad);
-					_puts(bf, len, &b);
+					if(b.buffer_len - (b.pbuffer - b.buffer) < 12) break;
+					b.pbuffer += m_itoa(va_arg(va, unsigned int), b.pbuffer, 10, (ch=='u' ? f_unsigned : 0) + zero_pad);
+//					len = mini_itoa(va_arg(va, unsigned int), 10, 0, (ch=='u'), bf, zero_pad);
+//					_puts(bf, len, &b);
 					break;
 
 				case 'x':
 				case 'X':
-					len = mini_itoa(va_arg(va, unsigned int), 16, (ch=='X'), 1, bf, zero_pad);
-					_puts(bf, len, &b);
+					if(b.buffer_len - (b.pbuffer - b.buffer) < 9) break;
+					b.pbuffer += m_itoa(va_arg(va, unsigned int), b.pbuffer, 16, ((ch=='X') ? f_uppercase : 0) + f_unsigned + zero_pad);
+//					len = mini_itoa(va_arg(va, unsigned int), 16, (ch=='X'), 1, bf, zero_pad);
+//					_puts(bf, len, &b);
 					break;
 
 				case 'c' :
@@ -181,9 +183,18 @@ mini_vsnprintf(char *buffer, unsigned int buffer_len, const char *fmt, va_list v
 
 				case 's' :
 					ptr = va_arg(va, char*);
-					_puts(ptr, mini_strlen(ptr), &b);
+					_puts(ptr, m_strlen(ptr), &b);
 					break;
 
+#ifdef MINI_PRINTF_USE_FLOAT
+				case '.' :  // %.xf - float with decimal point, x - precision
+				    ch = *fmt;
+				    fmt += 2;
+					if(b.buffer_len - (b.pbuffer - b.buffer) < 16) break;
+					ftoa(b.pbuffer, (float)va_arg(va, double), ch - '0');
+					b.pbuffer += m_strlen(b.pbuffer);
+					break;
+#endif
 				default:
 					_putc(ch, &b);
 					break;
@@ -194,15 +205,40 @@ end:
 	return b.pbuffer - b.buffer;
 }
 
-
-int
-mini_snprintf(char* buffer, unsigned int buffer_len, const char *fmt, ...)
+unsigned int m_snprintf(char* buffer, unsigned int buffer_len, const char *fmt, ...)
 {
 	int ret;
 	va_list va;
 	va_start(va, fmt);
-	ret = mini_vsnprintf(buffer, buffer_len, fmt, va);
+	ret = m_vsnprintf(buffer, buffer_len, fmt, va);
 	va_end(va);
 
 	return ret;
 }
+
+#ifdef MINI_PRINTF_USE_FLOAT
+// float to string, low stack usage
+char *ftoa(char *outstr, float val, unsigned char precision)
+{
+	char *ret = outstr;
+	// compute the rounding factor and fractional multiplier
+	float roundingFactor = 0.5;
+	unsigned long mult = 1;
+	unsigned char padding = precision;
+	while(precision--) {
+		roundingFactor /= 10.0;
+		mult *= 10;
+	}
+	if(val < 0.0){
+		*outstr++ = '-';
+		val = -val;
+	}
+	val += roundingFactor;
+	outstr += m_itoa((long)val, outstr, 10, 0);
+	if(padding > 0) {
+		*(outstr++) = '.';
+		m_itoa((val - (long)val) * mult, outstr, 10, padding);
+	}
+	return ret;
+}
+#endif
