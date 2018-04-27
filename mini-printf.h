@@ -51,7 +51,7 @@ char *ftoa(char *outstr, float val, unsigned char precision);
 }
 #endif
 
-//#define vsnprintf mini_vsnprintf
-//#define snprintf mini_snprintf
+#define vsnprintf m_vsnprintf
+#define snprintf m_snprintf
 
 #endif
